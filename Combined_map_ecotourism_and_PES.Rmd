@@ -1,0 +1,190 @@
+---
+title: "Untitled"
+author: "Erlangga"
+date: "2025-10-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(stringr)
+library(sf)
+library(leaflet)
+library(htmltools)
+library(leafem)
+library(htmlwidgets)
+
+# Read PES_mangrove data
+PES_data <- read_csv("PES_mangrove.csv", show_col_types = FALSE)
+
+# Prepare PES popup content
+PES_data <- PES_data %>%
+  mutate(popup_content = paste0(
+    "<b>Article Title:</b> ", `Article Title`, "<br/>",
+    "<b>Study Location:</b> ", `Study Location`, "<br/>",
+    "<b>Publication Year:</b> ", `Publication Year`, "<br/>",
+    "<b>Link:</b> ",
+    "<a href='", LINK, "' target='_blank'>Read Article</a>"
+  ))
+
+# Read Ecotourism data
+ecotourism_data <- read_csv("Ecotourism_Visualisasi.csv", show_col_types = FALSE)
+
+# Define colors for Ecotourism Types
+type_levels <- unique(ecotourism_data$Types)
+custom_palette <- c("#009081", "#C7C54E")
+colors_for_types <- rep(custom_palette, length.out = length(type_levels))
+color_pal <- colorFactor(palette = colors_for_types, domain = type_levels)
+
+# Prepare Ecotourism popup content
+ecotourism_data <- ecotourism_data %>%
+  mutate(popup_content = paste0(
+    "<b>Name:</b> ", Name, "<br/>",
+    "<b>Province:</b> ", Province, "<br/>",
+    "<b>Types:</b> ", Types, "<br/>",
+    "<b>Link:</b> ",
+    "<a href='", Link, "' target='_blank'>Read Article</a>"
+  ))
+
+# Create leaflet map
+combined_map <- leaflet() %>%
+  addProviderTiles(providers$OpenStreetMap) %>%
+  
+  # Add PES mangrove layer
+  addCircleMarkers(data = PES_data,
+                   lng = ~Longitude, lat = ~Latitude,
+                   popup = ~popup_content,
+                   radius = 6,
+                   color = "#ad1457",
+                   fillColor = "#ad1457",
+                   fillOpacity = 1,
+                   stroke = FALSE,
+                   group = "PES Mangrove Research") %>%
+  
+  # Add ecotourism layer
+  addCircleMarkers(data = ecotourism_data,
+                   lng = ~Longitude, lat = ~Latitude,
+                   popup = ~popup_content,
+                   radius = 5,
+                   color = ~color_pal(Types),
+                   stroke = FALSE,
+                   fillOpacity = 0.8,
+                   group = "Site types") %>%
+  
+  # Add legends for both layers
+  addLegend(position = "bottomright",
+            colors = "#ad1457",
+            labels = htmltools::HTML("PES Research Location"),
+            opacity = 1,
+            group = "PES Research Location") %>%
+  addLegend(position = "bottomleft",
+            pal = color_pal,
+            values = type_levels,
+            title = "Site types",
+            opacity = 1,
+            group = "Site types") %>%
+  
+  # Add layer control to toggle layers
+  addLayersControl(
+    overlayGroups = c("PES Mangrove Research", "Site types"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  
+  addMouseCoordinates() %>%
+  addMiniMap(tiles = providers$OpenStreetMap, position = "bottomleft")
+
+# Display combined map
+combined_map
+
+# Save
+saveWidget(combined_map,
+           file = "index.html",
+           selfcontained = TRUE,
+           libdir = "Combined_map_files")
+
+```
+
+```{r}
+# Only install if not already available
+if (!require("maps")) install.packages("maps")
+library(maps)
+
+# Load data
+PES_data <- read.csv("PES_mangrove.csv")
+ecotourism_data <- read.csv("Ecotourism_Visualisasi.csv")
+
+# Define map boundaries
+min_lon <- 90
+max_lon <- 150
+min_lat <- -15
+max_lat <- 15
+
+# Open PDF device
+pdf("output_map.pdf", width = 10, height = 7)
+
+# Save old plotting settings
+old_par <- par(no.readonly = TRUE)
+
+# Use exact axis limits with no expansion padding
+par(xaxs = "i", yaxs = "i")
+
+# Plot blank with ocean fill blue exactly within axis limits
+plot(NA, xlim = c(min_lon, max_lon), ylim = c(min_lat, max_lat),
+     type = "n", xlab = "", ylab = "", axes = FALSE)
+rect(min_lon, min_lat, max_lon, max_lat, col = "lightblue", border = NA)
+
+# Plot land polygons filled grey on top
+map("world", xlim = c(min_lon, max_lon), ylim = c(min_lat, max_lat),
+    col = "grey85", fill = TRUE, add = TRUE)
+
+# Add grid lines every 4 degrees
+abline(v = seq(min_lon, max_lon, by = 4), col = "grey70", lty = 3)
+abline(h = seq(min_lat, max_lat, by = 4), col = "grey70", lty = 3)
+
+# Draw axes with tick labels every 4 degrees
+axis(1, at = seq(min_lon, max_lon, by = 4),
+     labels = paste0(seq(min_lon, max_lon, by = 4), "°E"), cex.axis = 0.7)
+axis(2, at = seq(min_lat, max_lat, by = 4),
+     labels = paste0(abs(seq(min_lat, max_lat, by = 4)),
+                     ifelse(seq(min_lat, max_lat, by = 4) < 0, "°S", "°N")),
+     cex.axis = 0.7)
+
+# Plot PES mangrove points
+points(PES_data$Longitude, PES_data$Latitude,
+       pch = 21, bg = "#ad1457", col = "#ad1457", cex = 1.5)
+
+# Plot ecotourism points colored by type
+type_colors <- c("attraction site" = "#009081", "ecotourism site" = "#C7C54E")
+et_colors <- type_colors[as.character(ecotourism_data$Types)]
+points(ecotourism_data$Longitude, ecotourism_data$Latitude,
+       pch = 21, bg = et_colors, col = et_colors, cex = 1.2)
+
+# Add legend with white background at bottom right
+legend("bottomright", legend = c("PES Research", "Attraction Site", "Ecotourism Site"),
+       pt.bg = c("#ad1457", "#009081", "#C7C54E"),
+       pch = 21, col = "black", cex = 0.7,
+       bg = "white")
+
+# Add scale bar at bottom left
+scalebar_length <- 200
+scalebar_x <- min_lon + 1
+scalebar_y <- min_lat + 1
+rect(scalebar_x, scalebar_y, scalebar_x + 2, scalebar_y + 0.2, col = "black")
+text(scalebar_x + 1, scalebar_y - 0.5, paste0(scalebar_length, " km"),
+     adj = 0.3, cex = 0.5)
+
+# Add north arrow (top right) without overlap
+north_x <- max_lon - 1
+north_N_y <- max_lat - 0.8
+north_arrow_y0 <- max_lat - 1.5
+north_arrow_y1 <- max_lat - 1.0
+text(north_x, north_N_y, "N", cex = 0.7, font = 12)
+
+
+```
+
